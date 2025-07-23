@@ -1,0 +1,33 @@
+# QBiC SELEX Training Configuration
+
+# Bias model settings
+bias_models:
+  default: "bias_model/beadOnlyControl_NA_TG40NCATATG_AATBA_jolma2025_0_2_CNN11K128B512F_L2_DTrue.pt"
+
+# Data extraction settings
+data:
+  fastqgz_path: "/usr/project/xtmp/sl548/selex/selex_fastqgz_files/"
+
+# Residual model training settings
+residual_training:
+  batch_size: 64
+  num_filters: 128
+  kernel_size: 9
+  num_epochs: 7
+  max_sequences: 1800000
+  seed: 42
+
+# OLS training settings  
+ols_training:
+  kmer_size: 6
+  mode: 3  # 1=weights only, 2=covariance only, 3=both
+  max_sequences:
+    6: 1800000
+    7: 450000
+    8: 90000
+  seed: 42
+
+# Output settings
+output:
+  save_uncorrected: false
+  save_models: false
