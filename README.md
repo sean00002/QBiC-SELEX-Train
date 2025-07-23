@@ -7,6 +7,7 @@ QBiC-SELEX pipeline for training bias-corrected models on HT-SELEX data to predi
 This pipeline implements a two-stage approach for SELEX analysis:
 1. **Residual Model Training**: CNN-based model using bias correction to classify a pair of control and enriched sequences
 2. **OLS Model Training**: Linear model on k-mer features using CNN residual model corrected outputs
+
 The default bias model curated by us is in `/bias_model/`, and users can train and use their own bias model based on control TF-free HT-SELEX data. 
 
 ## Quick Start
