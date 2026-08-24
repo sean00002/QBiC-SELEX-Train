@@ -3,8 +3,11 @@
 import os
 import tempfile
 import shutil
+import json
 import pandas as pd
 import numpy as np
+import torch
+from pandas.testing import assert_frame_equal
 from modules.selex_data_extractor import SelexDataExtractor
 from modules.residual_trainer import ResidualTrainer
 from modules.ols_trainer import OLSTrainer
@@ -57,7 +60,35 @@ def test_residual_trainer():
         # Verify outputs
         assert os.path.exists("residual_model_output/corrected/test_output.csv")
         assert os.path.exists("residual_model_output/uncorrected/test_output.csv")
+        assert os.path.exists("residual_model_output/metadata/test_output.json")
         assert os.path.exists("models/residual/test_output.pt")
+
+        saved_selected_df = pd.read_csv(
+            "residual_model_output/corrected/test_output.csv"
+        )
+        assert_frame_equal(
+            corrected_df.reset_index(drop=True),
+            saved_selected_df.reset_index(drop=True),
+            check_dtype=False,
+        )
+
+        with open("residual_model_output/metadata/test_output.json") as f:
+            metadata = json.load(f)
+        checkpoint = torch.load(
+            "models/residual/test_output.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
+
+        expected_selected_score = (
+            "f_RES" if checkpoint["bias_scale"] >= 0 else "f_SELEX"
+        )
+        assert checkpoint["selected_score"] == expected_selected_score
+        assert metadata["selected_score"] == expected_selected_score
+        assert metadata["alpha"] == checkpoint["bias_scale"]
+        assert metadata["selection_rule"] == (
+            "f_RES if alpha >= 0 else f_SELEX"
+        )
         
         # Check DataFrame structure
         assert 'sequence' in corrected_df.columns
@@ -68,6 +99,7 @@ def test_residual_trainer():
         
     except Exception as e:
         print(f"✗ Residual trainer test failed: {e}")
+        raise
 
 def test_ols_trainer():
     """Test OLS trainer module"""
@@ -91,12 +123,13 @@ def test_ols_trainer():
     trainer = OLSTrainer(config)
     
     try:
-        # Test mode 3 (both weights and covariance)
-        lm_dic = trainer.train(test_csv, "test_ols_output", kmer_size=6, num=100, seed=42, mode=3)
+        # Use a small feature space so this smoke test remains full rank with
+        # the synthetic dataset. Production training still uses 6- or 7-mers.
+        lm_dic = trainer.train(test_csv, "test_ols_output", kmer_size=3, num=100, seed=42, mode=3)
         
         # Verify outputs
-        assert os.path.exists("k_mer_weights/test_ols_output_6mer.qbic")
-        assert any(f.startswith("test_ols_output_6mer.cov_") for f in os.listdir("covariance_matrices/"))
+        assert os.path.exists("k_mer_weights/test_ols_output_3mer.qbic")
+        assert any(f.startswith("test_ols_output_3mer.cov_") for f in os.listdir("covariance_matrices/"))
         
         # Check coefficients
         assert isinstance(lm_dic, dict)
@@ -106,6 +139,7 @@ def test_ols_trainer():
         
     except Exception as e:
         print(f"✗ OLS trainer test failed: {e}")
+        raise
 
 def test_data_extractor():
     """Test data extractor module"""
@@ -145,6 +179,7 @@ def test_data_extractor():
         
     except Exception as e:
         print(f"✗ Data extractor test failed: {e}")
+        raise
 
 def cleanup():
     """Clean up test files"""

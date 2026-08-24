@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Generated training and test outputs
+residual_model_output/
+models/residual/
+k_mer_weights/
+covariance_matrices/
+test_data/
+logs/

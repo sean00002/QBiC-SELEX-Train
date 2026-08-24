@@ -87,11 +87,12 @@ def run_single_experiment(args, config):
     if not args.stage or args.stage in ['ols', 'all'] or 'ols' in (args.stages or []):
         print("Training OLS model...")
         
-        # Use corrected predictions from residual model
+        # Use the alpha-dependent QBiC score selected by ResidualTrainer.
+        # For alpha >= 0 this is f_RES; for alpha < 0 this is f_SELEX.
         predictions_csv = f"residual_model_output/corrected/{output_name}.csv"
         
         if not os.path.exists(predictions_csv):
-            raise FileNotFoundError(f"Corrected predictions not found: {predictions_csv}. Make sure residual stage completed successfully.")
+            raise FileNotFoundError(f"Selected QBiC predictions not found: {predictions_csv}. Make sure residual stage completed successfully.")
         
         ols_trainer.train(
             predictions_csv, output_name,
@@ -202,7 +203,7 @@ def main():
     parser.add_argument("--seed", type=int, help="Random seed")
     
     # Output options
-    parser.add_argument("--save_uncorrected", action='store_true', help="Save uncorrected predictions")
+    parser.add_argument("--save_uncorrected", action='store_true', help="Save the alternate CNN-derived predictions")
     parser.add_argument("--save_models", action='store_true', help="Save trained models")
     
     # Configuration

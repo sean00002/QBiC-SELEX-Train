@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import roc_auc_score
+import json
 import os
 
 class SimpleCNN(nn.Module):
@@ -143,16 +144,16 @@ class ResidualTrainer:
         )
         
         # Generate predictions
-        corrected_df, uncorrected_df = self._generate_predictions(
+        selected_df, alternate_df = self._generate_predictions(
             residual_model, dataset_all, sequences, num, seed, bias_scale_value
         )
         
         # Save outputs
-        self._save_outputs(corrected_df, uncorrected_df, residual_model, optimizer, 
+        self._save_outputs(selected_df, alternate_df, residual_model, optimizer,
                           epoch_loss, epoch_auroc, bias_scale_value, output_name,
-                          save_uncorrected, save_model)
+                          save_uncorrected, save_model, seed)
         
-        return corrected_df
+        return selected_df
     
     def _load_bias_model(self, bias_model_path):
         """Load and prepare bias model"""
@@ -229,6 +230,29 @@ class ResidualTrainer:
         
         return residual_model, optimizer, epoch_loss, epoch_auroc, bias_scale_value, dataset_all
     
+    @staticmethod
+    def _select_output_dataframes(
+        combined_df: pd.DataFrame,
+        residual_df: pd.DataFrame,
+        bias_scale_value: float,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Select the QBiC and alternate scores according to learned alpha.
+
+        ``combined_df`` contains the complete SELEX-classification score
+        ``f_SELEX = f_RES + alpha * f_BIAS``. ``residual_df`` contains the
+        TF-specific residual score ``f_RES``. The first returned dataframe is
+        the alpha-dependent score selected for downstream QBiC OLS training;
+        the second contains the alternate score used for diagnostics.
+        """
+        if bias_scale_value >= 0:
+            selected_df = residual_df
+            alternate_df = combined_df
+        else:
+            selected_df = combined_df
+            alternate_df = residual_df
+
+        return selected_df, alternate_df
+
     def _generate_predictions(self, residual_model, dataset_all, sequences, num, seed, bias_scale_value):
         """Generate prediction dataframes"""
         residual_model.eval()
@@ -261,24 +285,47 @@ class ResidualTrainer:
         if residual_df.shape[0] > num:
             residual_df = residual_df.sample(n=num, random_state=seed)
         
-        if bias_scale_value >= 0:
-            return combined_df, residual_df
-        else:
-            return residual_df, combined_df
+        return self._select_output_dataframes(
+            combined_df=combined_df,
+            residual_df=residual_df,
+            bias_scale_value=bias_scale_value,
+        )
     
-    def _save_outputs(self, corrected_df, uncorrected_df, residual_model, optimizer,
+    def _save_outputs(self, selected_df, alternate_df, residual_model, optimizer,
                      epoch_loss, epoch_auroc, bias_scale_value, output_name,
-                     save_uncorrected, save_model):
+                     save_uncorrected, save_model, seed):
         """Save model outputs"""
+
+        selected_score = "f_RES" if bias_scale_value >= 0 else "f_SELEX"
+        alternate_score = "f_SELEX" if bias_scale_value >= 0 else "f_RES"
         
-        # Always save corrected predictions
+        # Keep the historical directory name for compatibility. This file is
+        # the alpha-dependent QBiC score selected for downstream OLS training.
         os.makedirs('residual_model_output/corrected', exist_ok=True)
-        corrected_df.to_csv(f'residual_model_output/corrected/{output_name}.csv', index=False)
+        selected_df.to_csv(f'residual_model_output/corrected/{output_name}.csv', index=False)
         
-        # Optionally save uncorrected predictions
+        # Optionally save the alternate CNN-derived score for diagnostics.
         if save_uncorrected:
             os.makedirs('residual_model_output/uncorrected', exist_ok=True)
-            uncorrected_df.to_csv(f'residual_model_output/uncorrected/{output_name}.csv', index=False)
+            alternate_df.to_csv(f'residual_model_output/uncorrected/{output_name}.csv', index=False)
+
+        os.makedirs('residual_model_output/metadata', exist_ok=True)
+        metadata = {
+            'alpha': bias_scale_value,
+            'alpha_parameterization': 'tanh',
+            'selected_score': selected_score,
+            'alternate_score': alternate_score,
+            'combined_score_definition': 'f_SELEX = f_RES + alpha * f_BIAS',
+            'selection_rule': 'f_RES if alpha >= 0 else f_SELEX',
+            'score_semantics_version': 1,
+            'seed': seed,
+            'num_filters': 128,
+            'kernel_size': 9,
+            'batch_size': 64,
+            'num_epochs': 7,
+        }
+        with open(f'residual_model_output/metadata/{output_name}.json', 'w') as f:
+            json.dump(metadata, f, indent=2)
         
         # Optionally save model
         if save_model:
@@ -292,9 +339,13 @@ class ResidualTrainer:
                 'loss': epoch_loss,
                 'auroc': epoch_auroc,
                 'bias_scale': bias_scale_value,
+                'selected_score': selected_score,
+                'selection_rule': 'f_RES if alpha >= 0 else f_SELEX',
+                'score_semantics_version': 1,
                 'model_config': {
                     'num_filters': 128,
                     'kernel_size': 9,
                     'batch_size': 64,
+                    'num_epochs': 7,
                 }
             }, model_path)
