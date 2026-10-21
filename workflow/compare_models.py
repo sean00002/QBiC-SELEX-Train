@@ -33,6 +33,7 @@ def main(argv=None):
           f"max |difference| = {np.max(np.abs(va - vb)):.3g}  identical = {bool(np.array_equal(va, vb))}")
     if a.sequences:
         df = pd.read_csv(a.sequences)
+        df = df[(df.ref_sequence + df.alt_sequence).str.fullmatch("[ACGT]+")]   # skip variants with N
         ea = score_sequences(wa, df.alt_sequence.values) - score_sequences(wa, df.ref_sequence.values)
         eb = score_sequences(wb, df.alt_sequence.values) - score_sequences(wb, df.ref_sequence.values)
         print(f"predicted effects:  Pearson r = {np.corrcoef(ea, eb)[0, 1]:.6f}  ({len(df)} variants)")
