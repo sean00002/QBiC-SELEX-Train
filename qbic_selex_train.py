@@ -2,7 +2,7 @@
 """Train QBiC-SELEX models: a residual CNN for each cycle pair, then 6- and 7-mer OLS models.
 
 Paper data (cycle files looked up in Table S1):
-  python qbic_selex_train.py --exp_id ETV4_eDBD_TTTGCC40NTGA_KS_yin2017            # every pair of the experiment
+  python qbic_selex_train.py --exp_id ETV4_eDBD_TTTGCC40NTGA_KS_yin2017            # each pair of the experiment
   python qbic_selex_train.py --exp_id ETV4_eDBD_TTTGCC40NTGA_KS_yin2017 --early 0 --late 4
   python qbic_selex_train.py --model_id ETV4_eDBD_TTTGCC40NTGA_KS_yin2017_0_4_7mer  # the pair behind a model
   python qbic_selex_train.py --batch pairs.csv --row 7     # one row of make_pairs.py output
@@ -34,9 +34,6 @@ def parse_args(argv=None):
     src.add_argument("--model_id", help="<exp_id>_<early>_<late>_<k>mer: train that model's pair")
     src.add_argument("--batch", help="CSV with exp_id[,early,late] rows (see make_pairs.py)")
     src.add_argument("--row", type=int, help="with --batch: run only this 1-based row (e.g. $SLURM_ARRAY_TASK_ID)")
-    src.add_argument("--experiment_stream", action="store_true",
-                     help="with --pair_id/--model_id: train the experiment's pairs in order up to this one, in one "
-                          "random stream (how whole-experiment runs proceed)")
     src.add_argument("--download", action="store_true", help="download missing paper reads first")
     own = p.add_argument_group("what to train (your own reads)")
     own.add_argument("--early_reads", "--negative_seqs", dest="early_reads", help="early-cycle reads")
@@ -65,7 +62,8 @@ def parse_args(argv=None):
 
 
 def build_jobs(args, cfg):
-    """Return a list of (pairs, read_pair, mode) training runs. Each run is seeded separately."""
+    """Return ``(pairs, read_pair, needed)``: the pair IDs to train (each in its own fresh run),
+    a function giving a pair's early and late reads, and the (exp_id, early, late) triples."""
     from qbic_data import manifest as mf
 
     manifest = cfg["data"]["manifest"]
@@ -81,7 +79,7 @@ def build_jobs(args, cfg):
             sys.exit("--early_reads and --late_reads go together")
         name = args.name or Path(args.late_reads).name.split(".")[0]
         reads = {name: (read_sequences(args.early_reads, args.trim), read_sequences(args.late_reads, args.trim))}
-        return [([name], reads.__getitem__, "pair")], []
+        return [name], reads.__getitem__, []
 
     targets = []   # (exp_id, early or None, late or None)
     if args.batch:
@@ -96,24 +94,19 @@ def build_jobs(args, cfg):
     else:
         sys.exit("say what to train: --exp_id, --pair_id, --model_id, --batch, or --early_reads/--late_reads")
 
-    jobs, needed = [], []
+    pairs = []
     for exp_id, early, late in targets:
         all_pairs = [f"{exp_id}_{e}_{c}" for e, c in mf.experiment_pairs(exp_id, manifest)]
         if early is None and late is None:
-            pairs, mode = all_pairs, "experiment"
+            pairs += all_pairs
         elif early is not None and late is not None:
             pair = f"{exp_id}_{early}_{late}"
             if pair not in all_pairs:
                 sys.exit(f"{pair} is not a valid cycle pair of {exp_id} (pairs: {', '.join(all_pairs)})")
-            if args.experiment_stream:
-                pairs, mode = all_pairs[:all_pairs.index(pair) + 1], "experiment"
-            else:
-                pairs, mode = [pair], "pair"
+            pairs.append(pair)
         else:
-            sys.exit("give both --early and --late, or neither (whole experiment)")
-        jobs.append((pairs, read_paper_pair, mode))
-        needed += [mf.parse_pair_id(pid) for pid in pairs]
-    return jobs, needed
+            sys.exit("give both --early and --late, or neither (all pairs of the experiment)")
+    return pairs, read_paper_pair, [mf.parse_pair_id(pid) for pid in pairs]
 
 
 def main(argv=None):
@@ -124,7 +117,7 @@ def main(argv=None):
     if args.bias_model:
         cfg["bias_model"] = {"path": args.bias_model, "sha256": None}
     stages = {"cnn": ("cnn",), "residual": ("cnn",), "ols": ("ols",), "all": ("cnn", "ols")}[args.stage]
-    jobs, needed = build_jobs(args, cfg)
+    pairs, read_pair, needed = build_jobs(args, cfg)
 
     if args.download and needed and "cnn" in stages:
         from qbic_data import download, manifest as mf
@@ -134,13 +127,11 @@ def main(argv=None):
             sys.exit(f"{len(failures)} downloads failed")
 
     use_gpu_ols = {"auto": None, "gpu": True, "cpu": False}[args.ols_device]
-    failures = []
-    for pairs, read_pair, mode in jobs:
-        run = TrainingRun(cfg, args.out_dir, pick_device(args.device), stages=stages,
-                          kmers=args.kmer or cfg["ols"]["kmers"], save_alternate=args.save_alternate,
-                          save_cnn=args.save_cnn, write_cov=not args.no_cov, skip_existing=args.skip_existing,
-                          use_gpu_ols=use_gpu_ols)
-        failures += run.run(pairs, read_pair, mode)
+    run = TrainingRun(cfg, args.out_dir, pick_device(args.device), stages=stages,
+                      kmers=args.kmer or cfg["ols"]["kmers"], save_alternate=args.save_alternate,
+                      save_cnn=args.save_cnn, write_cov=not args.no_cov, skip_existing=args.skip_existing,
+                      use_gpu_ols=use_gpu_ols)
+    failures = run.run(pairs, read_pair)
     if failures:
         print(f"{len(failures)} pair(s) failed; see {Path(args.out_dir) / 'failed_pairs.csv'}", file=sys.stderr)
         sys.exit(1)

@@ -41,3 +41,13 @@ def test_bhimsaria_reads_are_cut_to_20bp_after_n_filter(tmp_path, small_manifest
 def test_missing_reads_explain_how_to_download(tmp_path, small_manifest):
     with pytest.raises(FileNotFoundError, match="download_reads.py"):
         mf.load_cycle_reads("TFA_DBD_BC1_B1_yin2017", "1", tmp_path, small_manifest)
+
+
+def test_txt_files_holding_fastq_are_parsed_as_fastq(tmp_path):
+    # a quality line made only of A/C/G must not be taken for a read
+    record = "@r1 1:N:0:\nACGTACGTAC\n+\nACGACGACGA\n@r2\nTTTTGGGGCC\n+\nIIIIIIIIII\n"
+    with gzip.open(tmp_path / "yang.txt.gz", "wt") as f:
+        f.write(record)
+    assert read_sequences(tmp_path / "yang.txt.gz") == ["ACGTACGTAC", "TTTTGGGGCC"]
+    (tmp_path / "plain.txt").write_text("ACGTACGTAC\nTTTTGGGGCC\n")
+    assert read_sequences(tmp_path / "plain.txt") == ["ACGTACGTAC", "TTTTGGGGCC"]

@@ -14,8 +14,8 @@ def _open_text(path: Path):
 
 
 def read_sequences(path, trim: int | None = None) -> list[str]:
-    """Reads from FASTQ(.gz), FASTA(.gz), plain text (one read per line) or CSV
-    (``sequence`` column).
+    """Reads from FASTQ(.gz), FASTA(.gz), plain text (one read per line; a .txt file
+    holding FASTQ records is read as FASTQ) or CSV (``sequence`` column).
 
     Reads containing anything other than A/C/G/T (e.g. N) are dropped, then
     reads are optionally cut to their first ``trim`` bases. Duplicate reads are
@@ -31,7 +31,12 @@ def read_sequences(path, trim: int | None = None) -> list[str]:
             seqs = [str(rec.seq) for rec in SeqIO.parse(handle, "fasta")]
     elif name.endswith(".txt"):
         with _open_text(path) as handle:
-            seqs = [line.strip() for line in handle]
+            first = handle.readline()
+        with _open_text(path) as handle:
+            if first.startswith("@"):      # FASTQ content in a .txt(.gz) file (e.g. Yang et al. 2017)
+                seqs = [str(rec.seq) for rec in SeqIO.parse(handle, "fastq")]
+            else:                          # one read per line (e.g. Rodriguez-Martinez et al. 2017)
+                seqs = [line.strip() for line in handle]
     elif name.endswith(".csv"):
         df = pd.read_csv(path)
         if "sequence" not in df.columns:

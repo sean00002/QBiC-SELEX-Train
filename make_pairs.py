@@ -2,7 +2,7 @@
 """List the cycle pairs to train, as a CSV for ``qbic_selex_train.py --batch``.
 
   python make_pairs.py --exp_id ETV4_eDBD_TTTGCC40NTGA_KS_yin2017 > pairs.csv
-  python make_pairs.py --all --per_experiment > experiments.csv   # one row per experiment
+  python make_pairs.py --all -o pairs.csv
 
 Pairs follow the paper's rule: early cycle 0, 1 or 2 (plus the bead-only
 selections 0(1)-0(3) for Bhimsaria et al.), late cycle = any later cycle.
@@ -25,8 +25,6 @@ def main(argv=None):
     p.add_argument("--source", nargs="+", default=[], help="e.g. jolma2013 yin2017 bhimsaria2023")
     p.add_argument("--model_list", help="file with one model ID per line (e.g. a released collection)")
     p.add_argument("--all", action="store_true", help="every experiment in Table S1")
-    p.add_argument("--per_experiment", action="store_true",
-                   help="one row per experiment (whole-experiment runs) instead of one row per pair")
     p.add_argument("--config")
     p.add_argument("-o", "--output", help="output CSV (default: stdout)")
     a = p.parse_args(argv)
@@ -38,11 +36,8 @@ def main(argv=None):
         df = pd.DataFrame(rows).drop_duplicates()
     else:
         exps = select_experiments(manifest, a.exp_id, a.tf, a.source, model_ids, a.all)
-        if a.per_experiment:
-            df = pd.DataFrame({"exp_id": exps, "early": "", "late": ""})
-        else:
-            df = pd.DataFrame([{"exp_id": e, "early": c0, "late": c1}
-                               for e in exps for c0, c1 in experiment_pairs(e, manifest)])
+        df = pd.DataFrame([{"exp_id": e, "early": c0, "late": c1}
+                           for e in exps for c0, c1 in experiment_pairs(e, manifest)])
     if df.empty:
         sys.exit("nothing selected")
     df.to_csv(a.output or sys.stdout, index=False)

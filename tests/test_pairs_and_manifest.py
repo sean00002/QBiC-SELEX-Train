@@ -42,3 +42,14 @@ def test_files_for_pairs_dedupes(small_manifest):
     files = mf.files_for_pairs([("TFA_DBD_BC1_B1_yin2017", "0", "4"), ("TFA_DBD_BC1_B1_yin2017", "0", "3")],
                                small_manifest)
     assert [f.filename for f in files] == ["zero.fastq.gz", "a4.fastq.gz", "a3.fastq.gz"]
+
+
+def test_cli_trains_each_pair_of_an_experiment_separately():
+    import qbic_selex_train as cli
+    from qbic_train.config import load_config
+    mf.load_manifest.cache_clear()
+    exp = "ETV4_eDBD_TTTGCC40NTGA_KS_yin2017"
+    pairs, _, needed = cli.build_jobs(cli.parse_args(["--exp_id", exp]), load_config())
+    assert pairs == [f"{exp}_{e}_{c}" for e, c in mf.experiment_pairs(exp)] and len(pairs) == 9
+    pairs, _, _ = cli.build_jobs(cli.parse_args(["--model_id", f"{exp}_0_4_7mer"]), load_config())
+    assert pairs == [f"{exp}_0_4"]

@@ -64,10 +64,8 @@ class UpdatedCNN(nn.Module):
 class ResidualModel(nn.Module):
     """f_SELEX(x) = alpha * f_BIAS(x) + f_RES(x), with alpha = tanh(bias_scale).
 
-    The bias model's parameters are frozen (no gradients). As in the original
-    code, ``model.train()`` also puts the bias model's batch-norm and dropout
-    layers in training mode, so its batch-norm running statistics adapt to the
-    paired-cycle data during training; its learned weights do not change.
+    The universal bias model is frozen: it receives no gradients and always runs
+    in evaluation mode, even while the residual branch trains.
     """
 
     def __init__(self, bias_model, num_filters=128, kernel_size=7):
@@ -75,6 +73,11 @@ class ResidualModel(nn.Module):
         self.bias_model = bias_model
         self.bias_scale = nn.Parameter(torch.zeros(1))
         self.residual_branch = SimpleCNN(num_filters=num_filters, kernel_size=kernel_size)
+
+    def train(self, mode=True):
+        super().train(mode)
+        self.bias_model.eval()   # the bias model stays frozen
+        return self
 
     def forward(self, x, return_residual=False):
         with torch.no_grad():

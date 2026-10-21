@@ -7,8 +7,7 @@ import torch
 def seed_everything(seed: int) -> None:
     """Seed NumPy and PyTorch (CPU and CUDA) and make cuDNN deterministic.
 
-    Called once at the start of each training run: for a whole experiment the
-    pairs then share one random stream, in pair order, as in the original code.
+    Called at the start of each pair's training run.
     """
     np.random.seed(seed)
     torch.manual_seed(seed)
