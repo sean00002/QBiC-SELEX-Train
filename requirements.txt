@@ -1,0 +1,13 @@
+# QBiC-SELEX-Train. Install PyTorch first if you need a specific CUDA build:
+#   https://pytorch.org/get-started/locally/
+torch>=2.1
+numpy>=1.23
+pandas>=1.5
+scipy>=1.10
+scikit-learn>=1.2
+biopython>=1.81
+pyyaml>=6.0
+# Optional: OLS on the GPU (the paper used CuPy). Pick the build matching your CUDA:
+#   cupy-cuda12x   or   cupy-cuda13x
+# Optional: use the trained models (qbic-selex predict):
+#   qbic-selex

@@ -1,33 +1,52 @@
-# QBiC SELEX Training Configuration
+# QBiC-SELEX training configuration. Values are those used for the paper.
+# Relative paths are relative to the repository root.
 
-# Bias model settings
-bias_models:
-  default: "bias_model/beadOnlyControl_NA_TG40NCATATG_AATBA_jolma2025_0_2_CNN11K128B512F_L2_DTrue.pt"
+seed: 42                      # one seed per run (Methods: "The random seed was set to 42")
 
-# Data extraction settings
-data:
-  fastqgz_path: "/usr/project/xtmp/sl548/selex/selex_fastqgz_files/"
+bias_model:                   # universal bias model (Methods: "Universal bias model architecture and training")
+  path: bias_model/beadOnlyControl_NA_TG40NCATATG_AATBA_jolma2025_0_2_CNN11K128B512F_L2_DTrue.pt
+  sha256: 76e612e02a49437e8ac7720b2497014db7b6b99b3f30732c41fac3d5e69c184e
 
-# Residual model training settings
-residual_training:
+residual:                     # TF-specific residual model (Methods: "TF-specific residual model ...")
+  num_filters: 128            # one convolutional layer with 128 filters
+  kernel_size: 9              # kernel size 9
   batch_size: 64
-  num_filters: 128
-  kernel_size: 9
   num_epochs: 7
-  max_sequences: 1800000
-  seed: 42
+  learning_rate: 1.0e-3       # Adam
+  adam_eps: 1.0e-4
+  amsgrad: true
+  grad_clip_norm: 1.0
+  max_scored_sequences: 1800000   # unique scored reads kept (sampled with the seed if more)
 
-# OLS training settings  
-ols_training:
-  kmer_size: 6
-  mode: 3  # 1=weights only, 2=covariance only, 3=both
-  max_sequences:
-    6: 1800000
+ols:                          # k-mer OLS (Methods: "Interpretable k-mer OLS model")
+  kmers: [6, 7]
+  max_sequences:              # reads per model; null = all (6-mers use all <= 1,800,000)
+    6: null
     7: 450000
     8: 90000
-  seed: 42
 
-# Output settings
-output:
-  save_uncorrected: false
-  save_models: false
+validation:                   # within-/cross-experiment validation (Methods: "Paired-cycle design ...")
+  max_sequences: 500000       # random sample (without replacement) of each target score file
+
+bias_training:                # candidate bias models (Supplementary Methods: "Bias-model parameter ...")
+  grid:
+    batch_size: [32, 64, 128]
+    num_filters: [128, 256, 512]
+    kernel_size: [7, 9, 11]
+    n_conv_layers: [1, 2]
+    use_dropout: [false, true]   # dropout rate 0.2
+  cv_folds: 3
+  cv_random_state: 42
+  cv_epochs: 10
+  early_stopping_patience: 3
+  lr_factor: 0.5              # ReduceLROnPlateau on validation AUROC
+  lr_patience: 2
+  final_epochs: 10
+  learning_rate: 1.0e-3
+  adam_eps: 1.0e-4
+  amsgrad: true
+  grad_clip_norm: 1.0
+
+data:                         # paper data only (qbic_data)
+  manifest: data/TableS1_metadata_experiments.csv
+  reads_dir: data/reads       # <reads_dir>/<source>/<file>, as written by download_reads.py
