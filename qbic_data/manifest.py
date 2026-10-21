@@ -65,15 +65,25 @@ def parse_pair_id(pair_id: str) -> tuple[str, str, str]:
     return "_".join(parts[:5]), parts[5], parts[6]
 
 
+@lru_cache(maxsize=4)
+def _indexes(manifest=None):
+    """Rows by experiment ID, and initial-library rows by (source, barcode), in table order."""
+    m = load_manifest(manifest)
+    by_exp = dict(tuple(m.groupby("exp_id", sort=False)))
+    zero = m[m.record_class == "cycle-zero"]
+    by_library = dict(tuple(zero.groupby(["source", "barcode"], sort=False)))
+    return by_exp, by_library, m.iloc[0:0]
+
+
 def experiment_files(exp_id: str, manifest=None) -> list[CycleFile]:
     """All cycle files of an experiment: initial-library (cycle 0) files first,
     then the experiment's own cycles in increasing order."""
-    m = load_manifest(manifest)
+    by_exp, by_library, empty = _indexes(manifest)
     info = parse_exp_id(exp_id)
-    own = m[m.exp_id == exp_id]
-    if own.empty:
+    own = by_exp.get(exp_id)
+    if own is None:
         raise KeyError(f"experiment not in Table S1: {exp_id}")
-    zero = m[(m.record_class == "cycle-zero") & (m.source == info["source"]) & (m.barcode == info["barcode"])]
+    zero = by_library.get((info["source"], info["barcode"]), empty)
     if info["source"] == BHIMSARIA:
         own = own.sort_values("cycle", kind="stable")
     else:

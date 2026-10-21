@@ -1,8 +1,8 @@
 #!/bin/bash
 # Download the reads for a list of experiments as a Slurm array (one experiment per task).
 #
-#   python make_pairs.py --all --per_experiment -o experiments.csv
-#   tail -n +2 experiments.csv | cut -d, -f1 > exps.txt
+#   python make_pairs.py --all -o pairs.csv
+#   tail -n +2 pairs.csv | cut -d, -f1 | uniq > exps.txt
 #   sbatch --array=1-$(wc -l < exps.txt)%30 workflow/download_reads.sbatch exps.txt
 #SBATCH --job-name=qbic_download
 #SBATCH --cpus-per-task=1

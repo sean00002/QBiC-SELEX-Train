@@ -4,8 +4,7 @@
 #   python make_pairs.py --source yin2017 -o pairs.csv
 #   sbatch --array=1-$(($(wc -l < pairs.csv) - 1))%50 workflow/train_pairs.sbatch pairs.csv results
 #
-# A row with exp_id only (make_pairs.py --per_experiment) trains the whole
-# experiment in one random stream. Adjust the partition/GPU lines for your cluster.
+# Adjust the partition/GPU lines for your cluster.
 # A 7-mer OLS fit on 450,000 reads needs ~30 GB of GPU memory; on smaller GPUs
 # add "--ols_device cpu" (about 32 GB of RAM instead).
 #SBATCH --job-name=qbic_train

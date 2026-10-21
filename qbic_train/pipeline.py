@@ -25,10 +25,9 @@ from .seeding import seed_everything
 
 
 class TrainingRun:
-    """Trains a list of cycle pairs in one random stream, as the original code did.
-
-    The run is seeded once and the bias model created once; the pairs are then
-    trained in order with that same bias model. ``read_pair`` returns
+    """Trains cycle pairs one at a time. Each pair gets a fresh run: the seed is set
+    and the bias model loaded again, so a pair's model does not depend on which
+    other pairs were trained before it. ``read_pair`` returns
     ``(early_reads, late_reads)`` for a pair.
     """
 
@@ -41,7 +40,6 @@ class TrainingRun:
         self.skip_existing = skip_existing
         self.use_gpu_ols = ols.gpu_available() if use_gpu_ols is None else use_gpu_ols
         self.seed = cfg["seed"]
-        self.bias_model = None
 
     # -- paths -------------------------------------------------------------
     def scores_path(self, pair_id):
@@ -58,12 +56,8 @@ class TrainingRun:
         return bool(need) and all(p.exists() for p in need)
 
     # -- run ---------------------------------------------------------------
-    def run(self, pairs, read_pair, mode: str):
-        """Train ``pairs`` (a list of pair IDs) in order. Returns a list of (pair_id, error)."""
-        if "cnn" in self.stages:
-            seed_everything(self.seed)
-            bias_cfg = self.cfg["bias_model"]
-            self.bias_model, _ = load_bias_model(bias_cfg["path"], self.device, bias_cfg.get("sha256"))
+    def run(self, pairs, read_pair):
+        """Train ``pairs`` (a list of pair IDs), each in a fresh run. Returns a list of (pair_id, error)."""
         failures = []
         for pair_id in pairs:
             if self.skip_existing and self.done(pair_id):
@@ -73,7 +67,7 @@ class TrainingRun:
                 if "cnn" in self.stages:
                     self.log(f"[cnn] {pair_id}")
                     early, late = read_pair(pair_id)
-                    self.train_cnn(pair_id, early, late, mode)
+                    self.train_cnn(pair_id, early, late)
                 if "ols" in self.stages:
                     self.train_ols(pair_id)
             except Exception as e:  # one failed pair must not stop the others
@@ -83,9 +77,12 @@ class TrainingRun:
             self._log_failures(failures)
         return failures
 
-    def train_cnn(self, pair_id, early, late, mode):
+    def train_cnn(self, pair_id, early, late):
         rcfg = self.cfg["residual"]
-        model, dataset, sequences, loss, auroc = train_residual(self.bias_model, early, late, rcfg,
+        seed_everything(self.seed)
+        bias_cfg = self.cfg["bias_model"]
+        bias_model, _ = load_bias_model(bias_cfg["path"], self.device, bias_cfg.get("sha256"))
+        model, dataset, sequences, loss, auroc = train_residual(bias_model, early, late, rcfg,
                                                                 self.device, self.log)
         selected, alternate, alpha = score_reads(model, dataset, sequences, rcfg, self.device, self.seed)
         out = self.out / "cnn_scores"
@@ -100,7 +97,7 @@ class TrainingRun:
             "selection_rule": "f_RES if alpha >= 0 else f_SELEX",
             "n_early_reads": len(early), "n_late_reads": len(late), "n_scored_unique": int(selected.shape[0]),
             "final_train_loss": loss, "final_train_auroc": auroc,
-            "seed": self.seed, "run_mode": mode, "device": str(self.device),
+            "seed": self.seed, "device": str(self.device),
             "residual_settings": self.cfg["residual"],
             "bias_model": Path(self.cfg["bias_model"]["path"]).name,
             "bias_model_sha256": sha256(self.cfg["bias_model"]["path"]),
