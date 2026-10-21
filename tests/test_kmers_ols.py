@@ -82,3 +82,9 @@ def test_sampling_caps_per_k():
 def test_all_kmers_have_a_column():
     idx = kmers.kmer_index(3)
     assert set(idx) == {"".join(p) for p in product("ACGT", repeat=3)}
+
+
+def test_ols_refuses_fewer_reads_than_features():
+    df = pd.DataFrame({"sequence": ["ACGTACGTAC"] * 10, "score": range(10)})
+    with pytest.raises(ValueError, match="more scored reads"):
+        ols.train_kmer_model(df, 3, use_gpu=False)

@@ -51,6 +51,9 @@ def fit_ols(X, y, use_gpu: bool):
 
 def train_kmer_model(scores: pd.DataFrame, k: int, use_gpu: bool):
     """Fit one k-mer model on scored reads (``sequence``, ``score`` columns)."""
+    d = len(canonical_kmers(k))
+    if scores.shape[0] <= d:
+        raise ValueError(f"{k}-mer OLS needs more scored reads ({scores.shape[0]}) than k-mer features ({d})")
     X = kmer_count_matrix(scores["sequence"].values, k)
     beta, cov = fit_ols(X, scores["score"].values, use_gpu)
     if not np.all(np.isfinite(beta)):
