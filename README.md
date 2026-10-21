@@ -12,17 +12,26 @@ The files written here use the same formats, so `qbic-selex` reads them directly
 
 ## Contents
 
-| Paper (Methods / Supplementary Methods) | Code |
+| File or folder | What it does |
 |---|---|
-| Paired-cycle design: which cycles are paired | `qbic_data/manifest.py` (`experiment_pairs`), `make_pairs.py` |
-| HT-SELEX data and preprocessing (Table S1) | `qbic_data/`, `download_reads.py`, `data/TableS1_metadata_experiments.csv` |
-| Universal bias model (architecture, use) | `qbic_train/networks.py` (`UpdatedCNN`), `bias_model/` |
-| Bias-model parameter optimization and selection | `qbic_train_bias_model.py`, `qbic_train/bias_model.py`, `selection/bias_model_matrix.py` |
-| TF-specific residual model and the score f_QBiC | `qbic_train/networks.py` (`ResidualModel`), `qbic_train/residual.py` |
-| Interpretable k-mer OLS model, covariance for statistics | `qbic_train/kmers.py`, `qbic_train/ols.py` |
-| Within- and cross-experiment validation, model curation (Tables S2, S3) | `selection/`, `qbic_train/validation.py` |
-| Hyperparameters | `config/config.yaml` |
-| One command per step | `qbic_selex_train.py`, `workflow/` (example and Slurm scripts) |
+| `qbic_selex_train.py` | Command line: train TF models (residual CNN, then 6- and 7-mer OLS) for cycle pairs |
+| `qbic_train_bias_model.py` | Command line: train a universal bias-model candidate (grid search, then final fit) |
+| `download_reads.py` | Command line: download the paper's raw reads (files listed in Table S1) |
+| `make_pairs.py` | Command line: list the cycle pairs of experiments, as a CSV for `--batch` |
+| `qbic_train/networks.py` | Network architectures: the bias CNN, the residual branch, the combined model f_SELEX = α·f_BIAS + f_RES, one-hot encoding |
+| `qbic_train/residual.py` | Trains the residual model on early vs late reads, scores the reads, and picks f_QBiC (f_RES or f_SELEX by α) |
+| `qbic_train/kmers.py` | k-mer features: the 2,080 / 8,192 reverse-complement-merged k-mers, the count matrix, summing k-mer weights over a sequence |
+| `qbic_train/ols.py` | OLS fit with its covariance; writes `.weights.qbic` and `.cov_<n>.npy` files |
+| `qbic_train/bias_model.py` | Loads the bias model; grid search and final fit for new bias-model candidates |
+| `qbic_train/validation.py` | Pearson r between a k-mer model's predictions and CNN scores |
+| `qbic_train/pipeline.py` | Runs the steps for each pair and writes the outputs |
+| `qbic_train/reads.py`, `seeding.py`, `config.py` | Read loading, seeding, configuration |
+| `qbic_data/` | The paper's data: Table S1 lookups, cycle pairs, source-specific read preparation, downloads |
+| `selection/` | Within- and cross-experiment validation, top-2 and best-model selection (Tables S2, S3), bias-candidate comparison |
+| `config/config.yaml` | All hyperparameters |
+| `bias_model/` | The universal bias model used in the paper |
+| `data/TableS1_metadata_experiments.csv` | Table S1: experiments, cycles and read-file accessions |
+| `workflow/` | End-to-end example and Slurm scripts |
 
 ## Installation
 
@@ -76,6 +85,21 @@ python qbic_selex_train.py --early_reads c0.txt --late_reads c2.txt --name MYTF_
 Reads with any character other than A/C/G/T are dropped; all reads must have the same length
 (use `--trim N` to cut them to their first N bases). The outputs are described [below](#outputs).
 
+To use your own universal bias model, train it on the reads of a TF-free control experiment, then
+pass it with `--bias_model`:
+
+```bash
+python qbic_train_bias_model.py --early_reads ctrl_c0.fastq.gz --late_reads ctrl_c2.fastq.gz \
+    --name MYCTRL_0_2 --out_dir bias_candidates
+python qbic_selex_train.py --early_reads cycle0.fastq.gz --late_reads cycle3.fastq.gz --name MYTF_0_3 \
+    --bias_model bias_candidates/MYCTRL_0_2_CNN11K128B512F_L2_DTrue.pt
+```
+
+`qbic_train_bias_model.py` runs a 108-configuration grid search with 3-fold cross-validation, then
+trains the best configuration on all reads (a GPU is recommended). It writes the model as
+`<name>_CNN<kernel>K<batch>B<filters>F_L<layers>_D<dropout>.pt` and the grid results as
+`<name>_hyperparameter_results.csv`. Any checkpoint in this format works with `--bias_model`.
+
 ## Reproducing the paper's models at scale
 
 All experiments come from Table S1 (`data/TableS1_metadata_experiments.csv`: 19,027 cycle files,
@@ -102,57 +126,6 @@ python -m selection.select_models cross --results results
 To retrain only the pairs behind a released collection, list its model IDs:
 `python make_pairs.py --model_list primary_997.txt -o pairs.csv` (and
 `python download_reads.py --model_list primary_997.txt`).
-
-## How the code follows the Methods
-
-**Cycle pairs.** For each experiment, the early cycle is 0, 1 or 2 and the late cycle is any later
-cycle. Cycle 0 is the initial library with the same barcode and source (`record_class = cycle-zero`
-in Table S1). For Bhimsaria et al. (2023), the bead-only selections 0(1), 0(2) and 0(3) are extra
-early cycles. Pairs are named `<exp_id>_<early>_<late>` and models `<pair>_<k>mer`, as in Tables S2–S6.
-
-**Reads.** Reads containing N are removed; duplicates are kept for CNN training. Bhimsaria et al.
-reads are cut to their first 20 bp; Rodríguez-Martínez et al. (2017) files already hold the 20 bp
-random region.
-
-**Residual model.** One convolution (128 filters, kernel 9), ReLU, global max pooling and a linear
-output give f_RES(x); with the frozen universal bias model f_BIAS(x) and α = tanh(a), the
-classifier is f_SELEX(x) = α·f_BIAS(x) + f_RES(x). Training: weighted binary cross-entropy (late
-cycle positive), Adam (learning rate 10⁻³, ε 10⁻⁴, AMSGrad), gradient clipping at 1.0, 7 epochs,
-batch size 64, seed 42. The bias model is frozen throughout.
-
-**TF binding score.** Every read is scored; duplicates are collapsed to one row and at most
-1,800,000 unique reads are kept (sampled with seed 42). The OLS input is
-f_QBiC = f_RES if α ≥ 0, else f_SELEX (the two are identical at α = 0). `cnn_scores/<pair>.json`
-records α and which score was used.
-
-**k-mer OLS.** Each k-mer and its reverse complement share one feature (d = 2,080 for 6-mers,
-8,192 for 7-mers). 6-mer models use all scored reads; 7-mer models a random 450,000 (seed 42).
-β = (XᵀX)⁻¹Xᵀy and Σ = σ̂²(XᵀX)⁻¹ with σ̂² = RSS/(N − d), in float32, on the GPU with CuPy when
-available. QBiC-SELEX uses β to predict variant effects and Σ for their z-scores and P-values.
-
-**Validation and curation.** Within an experiment, each OLS model predicts the CNN scores of every
-cycle pair of that experiment, its own pair included, on a random 500,000 unique reads per pair
-(without replacement, seed 42); the model's score is the mean Pearson r, and the two best models of
-each experiment are kept (Table S2). Each of these then predicts the CNN scores of the top-2 pairs
-of every experiment of the same TF, its own experiment included; the model with the highest mean
-r is the TF's primary model (Table S3). Ties keep the model whose ID sorts first.
-
-**Universal bias model.** `bias_model/beadOnlyControl_NA_TG40NCATATG_AATBA_jolma2025_0_2_CNN11K128B512F_L2_DTrue.pt`
-is the model used for every TF model in the paper (sha256 `76e612e0…5e69c184e`, checked at load
-time): two convolutional layers of 512 filters (kernel 11) with batch normalization and ReLU,
-global max pooling, dropout 0.2, a 64-unit hidden layer; trained on cycles 0 vs 2 of the bead-only
-control of Jolma et al. (2025), batch size 128, 10 epochs. It was chosen as follows, and the code
-for both steps is included:
-
-```bash
-# one candidate per TF-free cycle pair: 108-configuration grid search, 3-fold CV, final fit
-python qbic_train_bias_model.py --exp_id beadOnlyControl_NA_TG40NCATATG_AATBA_jolma2025 --early 0 --late 2
-# every candidate on every TF-free pair (Supplementary Fig. 2); the best mean AUROC wins
-python -m selection.bias_model_matrix --models bias_candidates/*.pt --pairs <pair IDs>
-```
-
-The original grid search did not fix PyTorch's seed, so new candidates are reproducible
-(`seed` in the config) but not bit-identical to the paper's.
 
 ## Randomness and reproducibility
 
@@ -195,18 +168,6 @@ one implements. Use `--config my.yaml` for a modified copy; `--seed`, `--kmer`, 
 Training one ETV4-sized pair (~450,000 reads of 40 bp) takes about 3 minutes on an NVIDIA RTX
 A6000. A 7-mer OLS fit on 450,000 reads needs about 30 GB of GPU memory with CuPy; on smaller GPUs
 use `--ols_device cpu` (about 32 GB of RAM). Reading all reads of a large cycle needs several GB of RAM.
-
-## Tests
-
-```bash
-pip install pytest
-pytest -q
-```
-
-The tests run on CPU in under a minute and check the pairing rule (including the Methods and
-Supplementary Methods examples), read preparation, the score-selection rule, k-mer order and file
-formats against `qbic-selex`, OLS on planted coefficients, seeded determinism, and the selection
-logic behind Tables S2 and S3.
 
 ## Citation
 
