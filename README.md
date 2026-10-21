@@ -98,7 +98,7 @@ python qbic_selex_train.py --early_reads cycle0.fastq.gz --late_reads cycle3.fas
 `qbic_train_bias_model.py` runs a 108-configuration grid search with 3-fold cross-validation, then
 trains the best configuration on all reads (a GPU is recommended). It writes the model as
 `<name>_CNN<kernel>K<batch>B<filters>F_L<layers>_D<dropout>.pt` and the grid results as
-`<name>_hyperparameter_results.csv`. Any checkpoint in this format works with `--bias_model`.
+`<name>_hyperparameter_results.csv`; the file name in the example above depends on the configuration that wins. Any checkpoint in this format works with `--bias_model`.
 
 ## Reproducing the paper's models at scale
 
