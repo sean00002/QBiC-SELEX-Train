@@ -49,13 +49,15 @@ bash workflow/run_example.sh
 ```
 
 This downloads the five cycles of the ETV4 experiment `ETV4_eDBD_TTTGCC40NTGA_KS_yin2017`
-(~45 MB from ENA), trains all nine cycle pairs, runs the within-experiment validation, compares the
-`0_4` 7-mer model with the released `ETV4_eDBD_TTTGCC40NTGA_KS_yin2017_0_4_7mer`, and predicts
-variant effects with it. It takes about 30 minutes on one GPU. The steps, one by one:
+(~45 MB from ENA), trains all nine cycle pairs (one pair per run, as for the published models),
+runs the within-experiment validation, compares the `0_4` 7-mer model with the released
+`ETV4_eDBD_TTTGCC40NTGA_KS_yin2017_0_4_7mer`, and predicts variant effects with it. It takes
+about 45 minutes on one GPU. The steps, one by one:
 
 ```bash
 python download_reads.py --exp_id ETV4_eDBD_TTTGCC40NTGA_KS_yin2017
-python qbic_selex_train.py --exp_id ETV4_eDBD_TTTGCC40NTGA_KS_yin2017 --out_dir results
+python make_pairs.py --exp_id ETV4_eDBD_TTTGCC40NTGA_KS_yin2017 -o pairs.csv
+python qbic_selex_train.py --batch pairs.csv --out_dir results
 python -m selection.within_experiment --results results --exp_id ETV4_eDBD_TTTGCC40NTGA_KS_yin2017
 python -m selection.select_models within --results results
 qbic-selex predict -v variants.csv -m results/models/ETV4_eDBD_TTTGCC40NTGA_KS_yin2017_0_4_7mer.weights.qbic \
@@ -167,13 +169,15 @@ Every random step uses the config `seed` (42):
 | 1,800,000 / 450,000 / 500,000 read samples | `DataFrame.sample(random_state=seed)` |
 | Bias-model cross-validation folds | `KFold(shuffle=True, random_state=42)` |
 
-A run seeds once and then trains its pairs in order. `--exp_id X` trains all pairs of an
-experiment in one run (one random stream, as in the original whole-experiment runs); `--pair_id`,
-`--model_id`, or `--exp_id X --early a --late b` trains one pair in a fresh run. The same pair can
-therefore give slightly different models in the two modes. `--model_id … --experiment_stream`
-trains the experiment's pairs up to and including that one in one stream. Results are identical
-from run to run on the same hardware and software; across GPU models, CUDA or library versions,
-floating-point differences change the models slightly.
+A run seeds once and then trains its pairs in order. `--pair_id`, `--model_id`,
+`--exp_id X --early a --late b` and each row of `--batch` train one pair in a fresh run; this is how
+the published models were trained (see [Verification](#verification)). `--exp_id X` alone trains
+all pairs of an experiment in one run, continuing one random stream (and the bias model's
+batch-normalization statistics) from pair to pair, so its models differ slightly; the original
+scripts offered both modes. `--model_id … --experiment_stream` trains an experiment's pairs up to
+and including that one in one stream. Results are identical from run to run on the same hardware
+and software; across GPU models, CUDA or library versions, floating-point differences change the
+trained models slightly.
 
 ## Outputs
 
@@ -204,7 +208,28 @@ use `--ols_device cpu` (about 32 GB of RAM). Reading all reads of a large cycle 
 
 ## Verification
 
-VERIFICATION_PLACEHOLDER
+The rewritten code was checked against the original training scripts that produced the published
+models (run unmodified), on the ETV4 experiment `ETV4_eDBD_TTTGCC40NTGA_KS_yin2017` (five cycles,
+nine pairs), on an NVIDIA RTX A6000 with PyTorch 2.14 (CUDA 13) and CuPy 14.2:
+
+| Check | Result |
+|---|---|
+| Cycle files and pair order from Table S1 vs the original lookup code (all 4,421 experiments, 37,111 pairs) | identical |
+| Whole-experiment run: score files, 6- and 7-mer weights and covariances of all nine pairs | byte-identical |
+| Single-pair run (`0_4`): the same files | byte-identical |
+| Within-experiment validation (162 correlations) | identical (to 1e-16) |
+| The original scripts, run twice | identical (deterministic) |
+| Retrained `0_4_7mer` vs the released model | single-pair run: weights r = 0.992, predicted effects r = 0.987; whole-experiment run: 0.949 / 0.979 |
+| Top 2 models of the experiment vs Table S2 | the same two models, `0_3_7mer` and `0_4_7mer`: r = 0.9294 and 0.9297 (single-pair runs), 0.9298 and 0.9287 (whole-experiment run); Table S2: 0.9302 and 0.9299 |
+| Bias model on its own training reads (bead-only control, cycles 0 vs 2) | AUROC 0.825 (stored final training AUROC, with dropout: 0.802) |
+| ETV4 primary model vs Table S3 (the 16 top-2 models of all 8 ETV4 experiments, retrained one pair per run) | the same model, `ETV4_eDBD_TTTGCC40NTGA_KS_yin2017_0_4_7mer`: cross-experiment r = 0.9230 (Table S3: 0.9237); next best 0.9211 |
+| A `--batch` row vs the same pair trained with `--pair_id` | byte-identical |
+
+The published models were trained with older PyTorch and CUDA versions on other GPUs, so
+retrained models agree closely but not bit for bit: small floating-point differences change the
+CNN's training path. Single-pair runs reproduce the released model much more closely than
+whole-experiment runs, which is why single-pair runs are the default. `workflow/run_example.sh`
+repeats the comparison with the released model.
 
 ## Tests
 
