@@ -51,9 +51,10 @@ class TrainingRun:
         return self.out / "models" / f"{pair_id}_{k}mer.weights.qbic"
 
     def done(self, pair_id) -> bool:
-        need = [self.weights_path(p, k) for p in [pair_id] for k in self.kmers] if "ols" in self.stages else []
-        if "cnn" in self.stages:
-            need.append(self.scores_path(pair_id))
+        """True if every output this run would write for the pair already exists."""
+        need = [self.scores_path(pair_id)] if "cnn" in self.stages else []
+        if "ols" in self.stages:
+            need += [self.weights_path(pair_id, k) for k in self.kmers]
         return bool(need) and all(p.exists() for p in need)
 
     # -- run ---------------------------------------------------------------
@@ -138,5 +139,6 @@ class TrainingRun:
 
 
 def load_bias_model_config(cfg) -> dict:
+    """The bias model's architecture settings, stored with residual checkpoints."""
     ckpt = torch.load(cfg["bias_model"]["path"], map_location="cpu", weights_only=False)
     return dict(ckpt["model_config"])
