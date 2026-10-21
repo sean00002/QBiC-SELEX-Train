@@ -5,7 +5,8 @@
 #   bash workflow/run_example.sh           # run from the repository root; a GPU is recommended
 #
 # 1. downloads the 5 cycle files of ETV4_eDBD_TTTGCC40NTGA_KS_yin2017 (~45 MB, ENA)
-# 2. trains all 9 cycle pairs (residual CNN, then 6- and 7-mer OLS) in one run
+# 2. trains all 9 cycle pairs (residual CNN, then 6- and 7-mer OLS), one pair per run,
+#    as the published models were trained
 # 3. within-experiment validation and the top 2 models (compare with Table S2)
 # 4. compares the 0_4 7-mer model with the released one shipped with qbic-selex
 # 5. predicts variant effects with the retrained model (qbic-selex predict)
@@ -13,9 +14,11 @@ set -euo pipefail
 EXP=ETV4_eDBD_TTTGCC40NTGA_KS_yin2017
 MODEL=${EXP}_0_4_7mer
 OUT=${OUT:-results_example}
+mkdir -p "$OUT"
 
 python download_reads.py --exp_id "$EXP"
-python qbic_selex_train.py --exp_id "$EXP" --out_dir "$OUT"
+python make_pairs.py --exp_id "$EXP" -o "$OUT/pairs.csv"
+python qbic_selex_train.py --batch "$OUT/pairs.csv" --out_dir "$OUT"
 python -m selection.within_experiment --results "$OUT" --exp_id "$EXP"
 python -m selection.select_models within --results "$OUT"
 cat "$OUT/selection/within_experiment_top2.csv"
