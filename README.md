@@ -16,6 +16,7 @@ The files written here use the same formats, so `qbic-selex` reads them directly
 |---|---|
 | Paired-cycle design: which cycles are paired | `qbic_data/manifest.py` (`experiment_pairs`), `make_pairs.py` |
 | HT-SELEX data and preprocessing (Table S1) | `qbic_data/`, `download_reads.py`, `data/TableS1_metadata_experiments.csv` |
+| Experiment eligibility (≥ 2 cycles, > 10,000 reads) | `summarize_reads.py` |
 | Universal bias model (architecture, use) | `qbic_train/networks.py` (`UpdatedCNN`), `bias_model/` |
 | Bias-model parameter optimization and selection | `qbic_train_bias_model.py`, `qbic_train/bias_model.py`, `selection/bias_model_matrix.py` |
 | TF-specific residual model and the score f_QBiC | `qbic_train/networks.py` (`ResidualModel`), `qbic_train/residual.py` |
@@ -96,7 +97,8 @@ python -m selection.select_models cross --results results
 ```
 
 The paper's collection came from the 4,362 experiments with at least two cycles and more than
-10,000 reads per cycle (36,938 residual models, 73,876 OLS models). `results/selection/` then holds
+10,000 reads per cycle (36,938 residual models, 73,876 OLS models); `summarize_reads.py` reports
+reads, unique reads and read length per cycle file and flags experiments that meet this rule. `results/selection/` then holds
 `within_experiment_top2.csv` (Table S2 columns) and `primary_models.csv` (Table S3 columns).
 To retrain only the pairs behind a released collection, list its model IDs:
 `python make_pairs.py --model_list primary_997.txt -o pairs.csv` (and
